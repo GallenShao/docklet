@@ -11,6 +11,19 @@ import requests
 import traceback
 from nettools import portcontrol
 
+masterips=env.getenv('MASTER_IPS').split(",")
+masternames={}
+for masterip in masterips:
+    tmp = masterip.split("@")
+    if tmp[0] == '0.0.0.0' or tmp[0] == '127.0.0.1':
+        tmp[0] = env.getenv('PUBLIC_IP')
+    masternames[tmp[0]] = tmp[1]
+def get_master_name(ip):
+    if ip in masternames:
+        return masternames[ip]
+    else:
+        return ''
+
 userpoint = "http://" + env.getenv('USER_IP') + ":" + str(env.getenv('USER_PORT'))
 def post_to_user(url = '/', data={}):
     return requests.post(userpoint+url,data=data).json()
@@ -72,7 +85,9 @@ class VclusterMgr(object):
                 groupname = recover_info['groupname']
                 input_rate_limit = quotas[groupname]['input_rate_limit']
                 output_rate_limit = quotas[groupname]['output_rate_limit']
-                self.recover_cluster(cluster, user, uid, input_rate_limit, output_rate_limit)
+                [success, msg] = self.recover_cluster(cluster, user, uid, input_rate_limit, output_rate_limit)
+                if not success:
+                    logger.error(msg)
         logger.info("recovered all vclusters for all users")
 
     def mount_allclusters(self):
@@ -548,6 +563,56 @@ class VclusterMgr(object):
         else:
             return True
 
+    def add_domain_mapping(self, clustername, username, node_name, node_ip, node_port, domain_name):
+        [status, info] = self.get_clusterinfo(clustername, username)
+        if not status:
+            return [False, 'cluster not found']
+        if 'domain_mapping' not in info:
+            info['domain_mapping'] = []
+        for domain_mapping in info['domain_mapping']:
+            if domain_mapping['name'] == domain_name:
+                return [False, 'This domain name has already been used.']
+
+        mastername = get_master_name(info['proxy_server_ip'])
+        if self.distributedgw == 'True':
+            worker = self.nodemgr.ip_to_rpc(info['proxy_server_ip'])
+            worker.set_route('', 'http://'+node_ip+':'+node_port, subdomain=domain_name+'.'+clustername+'.'+username+'.'+mastername)
+        else:
+            proxytool.set_route('', 'http://'+node_ip+':'+node_port, subdomain=domain_name+'.'+clustername+'.'+username+'.'+mastername)
+        mapping = {}
+        mapping['ip'] = node_ip
+        mapping['port'] = node_port
+        mapping['name'] = domain_name
+        info['domain_mapping'].append(mapping)
+        info['domain'] = mastername + '.' + proxytool.get_portal_domain()
+
+        clusterfile = open(self.fspath + "/global/users/" + username + "/clusters/" + clustername, 'w')
+        clusterfile.write(json.dumps(info))
+        clusterfile.close()
+        return [True, info]
+
+    def delete_domain_mapping(self, clustername, username, domain_name):
+        [status, info] = self.get_clusterinfo(clustername, username)
+        if not status:
+            return [False, 'cluster not found']
+        if 'domain_mapping' not in info:
+            return [False, 'domain not found']
+        for domain_mapping in info['domain_mapping']:
+            if domain_mapping['name'] == domain_name:
+                mastername = get_master_name(info['proxy_server_ip'])
+                if self.distributedgw == 'True':
+                    worker = self.nodemgr.ip_to_rpc(info['proxy_server_ip'])
+                    worker.delete_route('', subdomain=domain_name+'.'+clustername+'.'+username+'.'+mastername)
+                else:
+                    proxytool.delete_route('', subdomain=domain_name+'.'+clustername+'.'+username+'.'+mastername)
+                info['domain_mapping'].remove(domain_mapping)
+
+                clusterfile = open(self.fspath + "/global/users/" + username + "/clusters/" + clustername, 'w')
+                clusterfile.write(json.dumps(info))
+                clusterfile.close()
+                return [True, info]
+        return [False, 'domain not found']
+
     def start_cluster(self, clustername, username, user_info):
         uid = user_info['data']['id']
         input_rate_limit = user_info['data']['groupinfo']['input_rate_limit']
@@ -568,6 +633,11 @@ class VclusterMgr(object):
                 if not self.check_public_ip(clustername,username):
                     [status, info] = self.get_clusterinfo(clustername, username)
                 worker.set_route("/" + info['proxy_public_ip'] + '/go/'+username+'/'+clustername, target)
+                mastername = get_master_name(info['proxy_server_ip'])
+                worker.set_route('', 'http://'+info['containers'][0]['ip'].split('/')[0], subdomain=clustername+'.'+username+'.'+mastername)
+                if 'domain_mapping' in info:
+                    for mapping in info['domain_mapping']:
+                        worker.set_route('', 'http://'+mapping['ip']+':'+mapping['port'], subdomain=mapping['name']+'.'+clustername+'.'+username+'.'+mastername)
             else:
                 if not info['proxy_server_ip'] == self.addr:
                     logger.info("%s %s proxy_server_ip has been changed, base_url need to be modified."%(username,clustername))
@@ -579,6 +649,11 @@ class VclusterMgr(object):
                 if not self.check_public_ip(clustername,username):
                     [status, info] = self.get_clusterinfo(clustername, username)
                 proxytool.set_route("/" + info['proxy_public_ip'] + '/go/'+username+'/'+clustername, target)
+                mastername = get_master_name(info['proxy_server_ip'])
+                proxytool.set_route('', 'http://'+info['containers'][0]['ip'].split('/')[0], subdomain=clustername+'.'+username+'.'+mastername)
+                if 'domain_mapping' in info:
+                    for mapping in info['domain_mapping']:
+                        proxytool.set_route('', 'http://'+mapping['ip']+':'+mapping['port'], subdomain=mapping['name']+'.'+clustername+'.'+username+'.'+mastername)
         except:
             logger.info(traceback.format_exc())
             return [False, "start cluster failed with setting proxy failed"]
@@ -640,6 +715,11 @@ class VclusterMgr(object):
                 if not self.check_public_ip(clustername,username):
                     [status, info] = self.get_clusterinfo(clustername, username)
                 worker.set_route("/" + info['proxy_public_ip'] + '/go/'+username+'/'+clustername, target)
+                mastername = get_master_name(info['proxy_server_ip'])
+                worker.set_route('', 'http://'+info['containers'][0]['ip'].split('/')[0], subdomain=clustername+'.'+username+'.'+mastername)
+                if 'domain_mapping' in info:
+                    for mapping in info['domain_mapping']:
+                        worker.set_route('', 'http://'+mapping['ip']+':'+mapping['port'], subdomain=mapping['name']+'.'+clustername+'.'+username+'.'+mastername)
             else:
                 if not info['proxy_server_ip'] == self.addr:
                     logger.info("%s %s proxy_server_ip has been changed, base_url need to be modified."%(username,clustername))
@@ -651,7 +731,13 @@ class VclusterMgr(object):
                 if not self.check_public_ip(clustername,username):
                     [status, info] = self.get_clusterinfo(clustername, username)
                 proxytool.set_route("/" + info['proxy_public_ip'] + '/go/'+username+'/'+clustername, target)
-        except:
+                mastername = get_master_name(info['proxy_server_ip'])
+                proxytool.set_route('', 'http://'+info['containers'][0]['ip'].split('/')[0], subdomain=clustername+'.'+username+'.'+mastername)
+                if 'domain_mapping' in info:
+                    for mapping in info['domain_mapping']:
+                        proxytool.set_route('', 'http://'+mapping['ip']+':'+mapping['port'], subdomain=mapping['name']+'.'+clustername+'.'+username+'.'+mastername)
+        except Exception as e:
+            logger.error(e)
             return [False, "start cluster failed with setting proxy failed"]
         # need to check and recover gateway of this user
         self.networkmgr.check_usergw(input_rate_limit, output_rate_limit, username, uid, self.nodemgr,self.distributedgw=='True')
@@ -682,8 +768,18 @@ class VclusterMgr(object):
         if self.distributedgw == 'True':
             worker = self.nodemgr.ip_to_rpc(info['proxy_server_ip'])
             worker.delete_route("/" + info['proxy_public_ip'] + '/go/'+username+'/'+clustername)
+            mastername = get_master_name(info['proxy_server_ip'])
+            worker.delete_route('', subdomain=clustername+'.'+username+'.'+mastername)
+            if 'domain_mapping' in info:
+                for mapping in info['domain_mapping']:
+                    worker.delete_route('', subdomain=mapping['name']+'.'+clustername+'.'+username+'.'+mastername)
         else:
             proxytool.delete_route("/" + info['proxy_public_ip'] + '/go/'+username+'/'+clustername)
+            mastername = get_master_name(info['proxy_server_ip'])
+            proxytool.delete_route('', subdomain=clustername+'.'+username+'.'+mastername)
+            if 'domain_mapping' in info:
+                for mapping in info['domain_mapping']:
+                    proxytool.delete_route('', subdomain=mapping['name']+'.'+clustername+'.'+username+'.'+mastername)
         for container in info['containers']:
             self.delete_all_port_mapping(username,clustername,container['containername'])
             worker = xmlrpc.client.ServerProxy("http://%s:%s" % (container['host'], env.getenv("WORKER_PORT")))

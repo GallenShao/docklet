@@ -411,7 +411,7 @@ def add_port_mapping(user, beans, form):
     user_info = post_to_user("/user/selfQuery/", data = {"token": form.get("token")})
     [status, message] = G_vclustermgr.add_port_mapping(user,clustername,node_name,node_ip,node_port,user_info['data']['groupinfo'])
     if status is True:
-        return json.dumps({'success':'true', 'action':'addproxy'})
+        return json.dumps({'success':'true', 'action':'addportmapping'})
     else:
         return json.dumps({'success':'false', 'message': message})
 
@@ -427,7 +427,41 @@ def delete_port_mapping(user, beans, form):
         return json.dumps({'success':'false', 'message': 'Illegal form.'})
     [status, message] = G_vclustermgr.delete_port_mapping(user,clustername,node_name,node_port)
     if status is True:
-        return json.dumps({'success':'true', 'action':'addproxy'})
+        return json.dumps({'success':'true', 'action':'deleteportmapping'})
+    else:
+        return json.dumps({'success':'false', 'message': message})
+
+@app.route("/domain_mapping/add/", methods=['POST'])
+@login_required
+def add_domain_mapping(user, beans, form):
+    global G_vclustermgr
+    logger.info ("handle request : add domain mapping")
+    node_name = form.get("node_name",None)
+    node_ip = form.get("node_ip", None)
+    node_port = form.get("node_port", None)
+    domain_name = form.get("domain_name", None)
+    clustername = form.get("clustername", None)
+    if node_name is None or node_ip is None or node_port is None or clustername is None or domain_name is None:
+        return json.dumps({'success':'false', 'message': 'Illegal form.'})
+    user_info = post_to_user("/user/selfQuery/", data = {"token": form.get("token")})
+    [status, message] = G_vclustermgr.add_domain_mapping(clustername,user,node_name,node_ip,node_port,domain_name)
+    if status is True:
+        return json.dumps({'success':'true', 'action':'adddomainmapping'})
+    else:
+        return json.dumps({'success':'false', 'message': message})
+
+@app.route("/domain_mapping/delete/", methods=['POST'])
+@login_required
+def delete_domain_mapping(user, beans, form):
+    global G_vclustermgr
+    logger.info ("handle request : delete domain mapping")
+    domain_name = form.get("domain_name",None)
+    clustername = form.get("clustername", None)
+    if domain_name is None or clustername is None:
+        return json.dumps({'success':'false', 'message': 'Illegal form.'})
+    [status, message] = G_vclustermgr.delete_domain_mapping(clustername,user,domain_name)
+    if status is True:
+        return json.dumps({'success':'true', 'action':'deletedomainmapping'})
     else:
         return json.dumps({'success':'false', 'message': message})
 

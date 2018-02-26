@@ -243,6 +243,20 @@ def delPortMapping(masterip,clustername,node_name,node_port):
     delPortMappingView.node_port = node_port
     return delPortMappingView.as_view()
 
+@app.route("/domain_mapping/add/<masterip>/", methods=['POST'])
+@login_required
+def addDomainMapping(masterip):
+    addDomainMappingView.masterip = masterip
+    return addDomainMappingView.as_view()
+
+@app.route("/domain_mapping/delete/<masterip>/<clustername>/<domain_name>/", methods=['GET'])
+@login_required
+def delDomainMapping(masterip,clustername,domain_name):
+    delDomainMappingView.masterip = masterip
+    delDomainMappingView.clustername = clustername
+    delDomainMappingView.domain_name = domain_name
+    return delDomainMappingView.as_view()
+
 @app.route("/getmasterdesc/<mastername>/", methods=['POST'])
 @login_required
 def getmasterdesc(mastername):

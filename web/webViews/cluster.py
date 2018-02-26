@@ -4,6 +4,7 @@ from webViews.dockletrequest import dockletRequest
 from webViews.dashboard import *
 from webViews.checkname import checkname
 import time, re
+import env
 
 class addClusterView(normalView):
     template_path = "addCluster.html"
@@ -398,7 +399,8 @@ class configView(normalView):
                 'memory': defaultmemory,
                 'disk': defaultdisk
                 }
-        return self.render("config.html", allimages = allimages, allclusters = allclusters_info, mysession=dict(session), quota = quota, usage = usage, defaultsetting = defaultsetting)
+        nginx_port = str(env.getenv('NGINX_PORT'))
+        return self.render("config.html", allimages = allimages, allclusters = allclusters_info, mysession=dict(session), quota = quota, usage = usage, nginxport = nginx_port, defaultsetting = defaultsetting)
 
     @classmethod
     def post(self):
@@ -428,6 +430,40 @@ class delPortMappingView(normalView):
     def post(self):
         data = {"clustername":self.clustername,"node_name":self.node_name,"node_port":self.node_port}
         result = dockletRequest.post('/port_mapping/delete/',data, self.masterip)
+        success = result.get("success")
+        if success == "true":
+            return redirect("/config/")
+        else:
+            return self.render(self.template_path, message = result.get("message"))
+
+    @classmethod
+    def get(self):
+        return self.post()
+
+class addDomainMappingView(normalView):
+    template_path = "error.html"
+
+    @classmethod
+    def post(self):
+        data = {"clustername":request.form["clustername"],"node_name":request.form["node_name"],"node_ip":request.form["node_ip"],"node_port":request.form["node_port"],"domain_name":request.form["domain_name"]}
+        result = dockletRequest.post('/domain_mapping/add/',data, self.masterip)
+        success = result.get("success")
+        if success == "true":
+            return redirect("/config/")
+        else:
+            return self.render(self.template_path, message = result.get("message"))
+
+    @classmethod
+    def get(self):
+        return self.post()
+
+class delDomainMappingView(normalView):
+    template_path = "error.html"
+
+    @classmethod
+    def post(self):
+        data = {"clustername":self.clustername,"domain_name":self.domain_name}
+        result = dockletRequest.post('/domain_mapping/delete/',data, self.masterip)
         success = result.get("success")
         if success == "true":
             return redirect("/config/")

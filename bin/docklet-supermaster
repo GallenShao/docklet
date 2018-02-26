@@ -128,7 +128,7 @@ do_start_proxy () {
         return 1
     fi
     log_daemon_msg "Starting $DAEMON_NAME_PROXY daemon in $FS_PREFIX"
-    DAEMON_OPTS_PROXY="--port $PROXY_PORT --api-port $PROXY_API_PORT --default-target=http://localhost:8888"
+    DAEMON_OPTS_PROXY="--port $PROXY_PORT --api-port $PROXY_API_PORT --default-target=http://localhost:8888 --host-routing"
     start-stop-daemon --start --background --pidfile $PIDFILE_PROXY --make-pidfile --user $DAEMON_USER --chuid $DAEMON_USER --startas $DAEMON_PROXY -- $DAEMON_OPTS_PROXY
     log_end_msg $?
 }
